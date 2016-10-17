@@ -45,3 +45,9 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+.Rproj.user
+
+# Specific git ignores files and folders
+Fundamentals_9_17_2016/fundamentals_9_17_2016/** Fundamentals_9_17_2016/fundamentals_9_17_2016/**/*
+distinctSecurities.csv
+*.RData

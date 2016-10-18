@@ -31,3 +31,31 @@ outlierKD <- function(dt, var) {
     return(invisible(var_name))
   }
 }
+
+## Plotting data -----
+# http://stackoverflow.com/questions/10151123/how-to-specify-columns-in-facet-grid-or-how-to-change-labels-in-facet-wrap
+
+library("ggplot2")
+library("reshape2")
+
+#example: 
+df <- data.frame(x=1:10,
+                 a=runif(10),
+                 b=runif(10),
+                 c=runif(10))
+
+#melt your data
+df_melt <- reshape2::melt(df,"x")
+
+#scatterplot per group
+ggplot(df_melt,aes(x,value)) +
+  geom_point() +
+  facet_grid(.~variable)
+
+
+# example 2
+df_melt2 <-reshape2::melt(Training_data_regression, "Position_change") # %>% dplyr::filter(variable %in% c("assets", "bps"))
+
+ggplot(df_melt2,aes(x = value, y = Position_change)) +
+  geom_point() +
+  facet_wrap(~ variable, scales = "free", ncol = 5)S

@@ -58,4 +58,4 @@ df_melt2 <-reshape2::melt(Training_data_regression, "Position_change") # %>% dpl
 
 ggplot(df_melt2,aes(x = value, y = Position_change)) +
   geom_point() +
-  facet_wrap(~ variable, scales = "free", ncol = 5)S
+  facet_wrap(~ variable, scales = "free", ncol = 5)

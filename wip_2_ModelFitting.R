@@ -67,6 +67,7 @@ m_Linear <- lm(Position_change ~ ., data = Training_data_regression)
 # 2) Logit/Probit Binomial GLM Model -----
 
 m_Logit <- glm(Buy_Sell ~ ., family=binomial(), data = Training_data_classification)
+perf_plot(mod = m_Logit, y = Training_data_classification[,"Buy_Sell"])
 
 # When using plain glm, we get a warning: glm.fit: fitted probabilities numerically 0 or 1 occurred
 #
@@ -118,59 +119,156 @@ GLM_lasso_betas <- coef(m_cv_glmnet_lasso, s = "lambda.min")
 Active.Index <- which(GLM_lasso_betas != 0)           # identifies the covariates that are active in the model and
 Active.Coefficients <- GLM_lasso_betas[Active.Index]  # shows the coefficients of those covariates
 
-
-# Model Prediction ------
-
-Results <- Test_data_regression
-Results$Buy_Sell <- as.factor(ifelse(Test_data_regression[,Y_var] > 0, "Buy", "Sell"))
-
-# 1) Linear (Gaussian) Model
-Y_pred <- predict(m_Linear,  Test_data_regression[, which(names(Test_data_regression) != Y_var)]) %>% as.vector()
-Results$pred_linear_Gaussian_Buy_Sell <- Y_pred
-
-# 2) GLM Logistic (plain) Model
-Y_pred <- predict(m_Logit,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
-                  type = "response") %>% as.vector()
-Results$pred_plain_logit_Buy_Sell <- Y_pred
-
-# 3) Bias Reduction GLM
-Y_pred <- predict(m_Logit_BiasRedution,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
-                  type = "response") %>% as.vector()
-Results$pred_BiasReduction_logit_Buy_Sell <- Y_pred
-
-# 4) Bayesian GLM
-Y_pred <- predict(m_Logit_Bayesian,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
-                  type = "response") %>% as.vector()
-Results$pred_Bayesian_logit_Buy_Sell <- Y_pred
+# Determining the cut off probability threshold to determine the class -----
+library(pROC)
+# http://stats.stackexchange.com/questions/133320/logistic-regression-class-probabilities
+# http://stats.stackexchange.com/questions/25389/obtaining-predicted-values-y-1-or-0-from-a-logistic-regression-model-fit
+#
+# if your classifier were aiming to evaluate a diagnostic test for a serious disease that has a relatively safe cure, 
+# the sensitivity is far more important that the specificity. 
+# In another case, if the disease were relatively minor and the treatment were risky, specificity would be more important to control. 
+# For general classification problems, it is considered "good" to jointly optimize the sensitivity and specification.
+# 
+# The threshold can be determined in a variety of way. Check the OptimalCutpoints package
+# http://stats.stackexchange.com/questions/29719/how-to-determine-best-cutoff-point-and-its-confidence-interval-using-roc-curve-i
 
 
-# 5) glmnet model
-# To get class, use: type="class"; to get probabilities use: type="response"
-# http://stackoverflow.com/questions/26806902/how-to-get-probabilities-between-0-and-1-using-glmnet-logistic-regression
-x_test <- as.matrix(Test_data_classification[,which(names(Test_data_classification) != "Buy_Sell")])
-# Lasso Results
-Y_pred = predict(m_cv_glmnet_lasso, s='lambda.min', newx=x_test, type="class")  %>% as.vector()
-Results$pred_glmnet_lasso_Buy_Sell <- Y_pred
-# Ridge Results
-Y_pred = predict(m_cv_glmnet_ridge, s='lambda.min', newx=x_test, type="class")  %>% as.vector()
-Results$pred_glmnet_ridge_Buy_Sell <- Y_pred
+# Specifying the cost function
+cost_fn <- function(analysis, sensitivity_cost = 1, specificity_cost = 1) {
+  res <- (sensitivity_cost * analysis$sensitivities) + (specificity_cost * analysis$specificities)
+  return(res)
+}
+
+#apply roc function for Logit model
+analysis <- roc(response=Training_data_classification$Buy_Sell, predictor=m_Logit$fitted.values)
+e <- cbind(analysis$thresholds, cost_fn(analysis))
+opt_t_Logit <- subset(e,e[,2]==max(e[,2]))[,1]
+
+#apply roc function for baysian Logit model
+analysis <- roc(response=Training_data_classification$Buy_Sell, predictor=m_Logit_Bayesian$fitted.values)
+e <- cbind(analysis$thresholds, cost_fn(analysis))
+opt_t_bayes <- subset(e,e[,2]==max(e[,2]))[,1]
+
+#apply roc function for glmnet Lasso model
+analysis <- roc(response=Training_data_classification$Buy_Sell, 
+                predictor=predict(m_cv_glmnet_lasso,
+                                  newx = as.matrix(Training_data_classification[,which(names(Training_data_classification) != "Buy_Sell")]),
+                                  s = "lambda.min", type = "response"))
+
+e <- cbind(analysis$thresholds, cost_fn(analysis))
+opt_t_glmnet_lasso <- subset(e,e[,2]==max(e[,2]))[,1]
+
+#apply roc function for glmnet Ridge model
+analysis <- roc(response=Training_data_classification$Buy_Sell, 
+                predictor=predict(m_cv_glmnet_ridge,
+                                  newx = as.matrix(Training_data_classification[,which(names(Training_data_classification) != "Buy_Sell")]),
+                s = "lambda.min", type = "response"))
+
+e <- cbind(analysis$thresholds, cost_fn(analysis))
+opt_t_glmnet_ridge <- subset(e,e[,2]==max(e[,2]))[,1]
+
+opt_t_models <- c(logit = opt_t_Logit, Baysian = opt_t_bayes,GLMnet_Lasso = opt_t_glmnet_lasso, GLMnet_Ridge = opt_t_glmnet_ridge)
+# All model yields similar optimal threshold, and so we will average them and use that estimates to decide on the class when needed
+opt_t <- mean(opt_t_models)
 
 
-# Summary of Model Comparaison based on predictions
-Results_Summary <- Results
-Results_Summary$Correct_pred_LinearGaussian <- ifelse(sign(Results[, Y_var]) == sign(Results$pred_linear_Gaussian_Buy_Sell), TRUE, FALSE)
-Results_Summary <- Results_Summary %>% 
-                   dplyr::mutate(Correct_pred_Logistic_plain         = ifelse(Buy_Sell == pred_plain_logit_Buy_Sell, TRUE, FALSE),
-                                 Correct_pred_Logistic_BiasReduction = ifelse(Buy_Sell == pred_BiasReduction_logit_Buy_Sell, TRUE, FALSE),
-                                 Correct_pred_Logistic_Bayesian      = ifelse(Buy_Sell == pred_Bayesian_logit_Buy_Sell, TRUE, FALSE),
-                                 Correct_pred_GLMnet_Lasso           = ifelse(Buy_Sell == pred_glmnet_lasso_Buy_Sell, TRUE, FALSE),
-                                 Correct_pred_GLMnet_Ridge           = ifelse(Buy_Sell == pred_glmnet_ridge_Buy_Sell, TRUE, FALSE)) %>%
-  dplyr::summarise(Count = n(),
-                   Count_Buy  = sum(Buy_Sell == "Buy"),
-                   Percent_buy = Count_Buy/Count,
-                   Count_Sell = sum(Buy_Sell == "Sell"),
-                   Percent_sell =  Count_Sell/Count,
-                   accuracy_LinearGaussian = sum(Correct_pred_LinearGaussian == TRUE)/Count,
-                   accuracy_Logistic_plain = sum(Correct_pred_Logistic_plain == TRUE)/Count,
-                   accuracy_GLMnet_lasso   = sum(Correct_pred_GLMnet_Lasso == TRUE)/Count,
-                   accuracy_GLMnet_ridge   = sum(Correct_pred_GLMnet_ridge == TRUE)/Count) %>% t()
+# Determining the threshold Method 2 ------
+library(ROCR)
+# https://hopstat.wordpress.com/2014/12/19/a-small-introduction-to-the-rocr-package/
+# Logit model
+pred_logit <- prediction(predictions = m_Logit$fitted.values, labels = Training_data_classification$Buy_Sell)
+cost.perf <- performance(pred_logit, "cost")
+cost.perf_assymetric  <- performance(pred_logit, "cost", cost.fp = 2, cost.fn = 1)
+cost.perf_assymetric2 <- performance(pred_logit, "cost", cost.fp = 1, cost.fn = 2)
+# Finding optimal threshold which minimize the cost
+# Minimizing cost associated with (False Positive, False Negative)
+opt_t2 <- pred_logit@cutoffs[[1]][which.min(cost.perf@y.values[[1]])]
+opt_t3 <- pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric@y.values[[1]])]
+opt_t4 <- pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric2@y.values[[1]])]
+
+# To validate whether Buy = 0 OR 1 -------
+head(m_Logit$y)
+head(Training_data_classification$Buy_Sell)
+# From this we can confirm that Buy = 0 and Sell = 1
+
+# Model Prediction for Test Data------
+ModelPreictionResults <- function(threshold) {
+  # This function access Test_data_regression, Test_data_classification 
+  # as well as regression models defined in the global workspace
+  
+  Results <- Test_data_regression
+  Results$Buy_Sell <- as.factor(ifelse(Test_data_regression[,Y_var] > 0, "Buy", "Sell"))
+  
+  # 1) Linear (Gaussian) Model
+  Y_pred <- predict(m_Linear,  Test_data_regression[, which(names(Test_data_regression) != Y_var)]) %>% as.vector()
+  Results$pred_linear_Gaussian_Buy_Sell <- Y_pred
+  
+  # 2) GLM Logistic (plain) Model
+  Y_pred <- predict(m_Logit,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
+                    type = "response") %>% as.vector()
+  Results$prob_plain_logit_Buy_Sell <- Y_pred
+  Results$pred_plain_logit_Buy_Sell <- ifelse(Y_pred > threshold, "Sell", "Buy")
+  
+  # 3) Bias Reduction GLM
+  Y_pred <- predict(m_Logit_BiasRedution,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
+                    type = "response") %>% as.vector()
+  # For some reason, prediction with this model returns class not prob
+  Results$pred_BiasReduction_logit_Buy_Sell <-  ifelse(Y_pred == 1, "Sell", "Buy")
+  
+  # 4) Bayesian GLM
+  Y_pred <- predict(m_Logit_Bayesian,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
+                    type = "response") %>% as.vector()
+  Results$prob_Bayesian_logit_Buy_Sell <- Y_pred
+  Results$pred_Bayesian_logit_Buy_Sell <- ifelse(Y_pred > threshold, "Sell", "Buy")
+  
+  
+  # 5) glmnet model
+  # To get class, use: type="class"; to get probabilities use: type="response"
+  # http://stackoverflow.com/questions/26806902/how-to-get-probabilities-between-0-and-1-using-glmnet-logistic-regression
+  x_test <- as.matrix(Test_data_classification[,which(names(Test_data_classification) != "Buy_Sell")])
+  # Lasso Results
+  
+  Y_pred = predict(m_cv_glmnet_lasso, s='lambda.min', newx=x_test, type="response")  %>% as.vector()
+  Results$prob_glmnet_lasso_Buy_Sell <- Y_pred
+  Results$pred_glmnet_lasso_Buy_Sell <- ifelse(Y_pred > threshold, "Sell", "Buy")
+  Y_pred = predict(m_cv_glmnet_lasso, s='lambda.min', newx=x_test, type="class")  %>% as.vector()
+  Results$pred_glmnet_lasso_Buy_Sell_check <- ifelse(Y_pred == 2, "Sell", "Buy")
+  
+  # Ridge Results
+  Y_pred = predict(m_cv_glmnet_ridge, s='lambda.min', newx=x_test, type="response")  %>% as.vector()
+  Results$prob_glmnet_ridge_Buy_Sell <-  Y_pred
+  Results$pred_glmnet_ridge_Buy_Sell <- ifelse(Y_pred > threshold, "Sell", "Buy")
+  Y_pred = predict(m_cv_glmnet_ridge, s='lambda.min', newx=x_test, type="class")  %>% as.vector()
+  Results$pred_glmnet_ridge_Buy_Sell_check <-  ifelse(Y_pred == 2, "Sell", "Buy")
+  
+  ## NOTE: ------
+  # It seems that GLMnet uses a probability threshold of 0.5, So we will be using the threshold to determine the class.
+  
+  # Summary of Model Comparaison based on predictions ----
+  Results_focus <- Results[,c(1,47:58)]
+  Results_focus$Correct_pred_LinearGaussian <- ifelse(sign(Results[, Y_var]) == sign(Results$pred_linear_Gaussian_Buy_Sell), TRUE, FALSE)
+  Results_Summary <- Results_focus %>% 
+    dplyr::mutate(Correct_pred_Logistic_plain         = ifelse(Buy_Sell == pred_plain_logit_Buy_Sell, TRUE, FALSE),
+                  Correct_pred_Logistic_BiasReduction = ifelse(Buy_Sell == pred_BiasReduction_logit_Buy_Sell, TRUE, FALSE),
+                  Correct_pred_Logistic_Bayesian      = ifelse(Buy_Sell == pred_Bayesian_logit_Buy_Sell, TRUE, FALSE),
+                  Correct_pred_GLMnet_Lasso           = ifelse(Buy_Sell == pred_glmnet_lasso_Buy_Sell, TRUE, FALSE),
+                  Correct_pred_GLMnet_Ridge           = ifelse(Buy_Sell == pred_glmnet_ridge_Buy_Sell, TRUE, FALSE)) %>%
+    dplyr::summarise(Count = as.integer(n()),
+                     Count_Buy  = as.integer(sum(Buy_Sell == "Buy")),
+                     Percent_buy = Count_Buy/Count,
+                     Count_Sell = as.integer(sum(Buy_Sell == "Sell")),
+                     Percent_sell =  Count_Sell/Count,
+                     accuracy_LinearGaussian = round(100 * sum(Correct_pred_LinearGaussian == TRUE)/Count,digits = 2),
+                     accuracy_Logistic_plain = round(100 * sum(Correct_pred_Logistic_plain == TRUE)/Count,digits = 2),
+                     accuracy_GLMnet_Lasso   = round(100 * sum(Correct_pred_GLMnet_Lasso == TRUE)/Count,digits = 2),
+                     accuracy_GLMnet_Ridge   = round(100 * sum(Correct_pred_GLMnet_Ridge == TRUE)/Count, digits = 2)) %>% t()
+  
+  return(Results_Summary)
+}
+
+
+
+Results_Summary_1 <- ModelPreictionResults(threshold = opt_t)  # Result summary associated with opt_t
+Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2) # Result summary associated with opt_t2
+Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3) # Result summary associated with opt_t3
+Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4) # Result summary associated with opt_t4

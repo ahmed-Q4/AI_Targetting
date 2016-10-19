@@ -180,11 +180,13 @@ pred_logit <- prediction(predictions = m_Logit$fitted.values, labels = Training_
 cost.perf <- performance(pred_logit, "cost")
 cost.perf_assymetric  <- performance(pred_logit, "cost", cost.fp = 2, cost.fn = 1)
 cost.perf_assymetric2 <- performance(pred_logit, "cost", cost.fp = 1, cost.fn = 2)
+cost.perf_assymetric3 <- performance(pred_logit, "cost", cost.fp = 1, cost.fn = 5)
 # Finding optimal threshold which minimize the cost
 # Minimizing cost associated with (False Positive, False Negative)
 opt_t2 <- pred_logit@cutoffs[[1]][which.min(cost.perf@y.values[[1]])]
 opt_t3 <- pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric@y.values[[1]])]
 opt_t4 <- pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric2@y.values[[1]])]
+opt_t5 <- pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric3@y.values[[1]])]
 
 # To validate whether Buy = 0 OR 1 -------
 head(m_Logit$y)
@@ -272,3 +274,4 @@ Results_Summary_1 <- ModelPreictionResults(threshold = opt_t)  # Result summary 
 Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2) # Result summary associated with opt_t2
 Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3) # Result summary associated with opt_t3
 Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4) # Result summary associated with opt_t4
+Results_Summary_5 <- ModelPreictionResults(threshold = opt_t5) # Result summary associated with opt_t5

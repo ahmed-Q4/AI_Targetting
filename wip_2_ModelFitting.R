@@ -215,7 +215,7 @@ ModelPreictionResults <- function(threshold) {
   Y_pred <- predict(m_Logit_BiasRedution,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
                     type = "response") %>% as.vector()
   # For some reason, prediction with this model returns class not prob
-  Results$pred_BiasReduction_logit_Buy_Sell <-  ifelse(Y_pred == 1, "Sell", "Buy")
+  Results$pred_BiasReduction_logit_Buy_Sell <-  ifelse(abs(Y_pred - 1) == .Machine$double.eps, "Sell", "Buy")
   
   # 4) Bayesian GLM
   Y_pred <- predict(m_Logit_Bayesian,  Test_data_classification[, which(names(Test_data_classification) != "Buy_Sell")],
@@ -248,30 +248,102 @@ ModelPreictionResults <- function(threshold) {
   
   # Summary of Model Comparaison based on predictions ----
   Results_focus <- Results[,c(1,47:58)]
-  Results_focus$Correct_pred_LinearGaussian <- ifelse(sign(Results[, Y_var]) == sign(Results$pred_linear_Gaussian_Buy_Sell), TRUE, FALSE)
+  Results_focus$pred_Buy_given_Buy_LinearGaussian   <- ifelse(sign(Results$pred_linear_Gaussian_Buy_Sell) > 0 & sign(Results[, Y_var]) > 0, TRUE, FALSE)
+  Results_focus$pred_Buy_given_Sell_LinearGaussian  <- ifelse(sign(Results$pred_linear_Gaussian_Buy_Sell) > 0 & sign(Results[, Y_var]) < 0, TRUE, FALSE)
+  Results_focus$pred_Sell_given_Buy_LinearGaussian  <- ifelse(sign(Results$pred_linear_Gaussian_Buy_Sell) < 0 & sign(Results[, Y_var]) > 0, TRUE, FALSE)
+  Results_focus$pred_Sell_given_Sell_LinearGaussian <- ifelse(sign(Results$pred_linear_Gaussian_Buy_Sell) < 0 & sign(Results[, Y_var]) < 0, TRUE, FALSE)
+  Results_focus$Correct_pred_LinearGaussian         <- ifelse(sign(Results[, Y_var]) == sign(Results$pred_linear_Gaussian_Buy_Sell), TRUE, FALSE)
+  Results_focus <- Results_focus %>% 
+    dplyr::mutate(# Plain Logistic Regression
+                  pred_Buy_given_Buy_Logistic_plain   = ifelse(pred_plain_logit_Buy_Sell == "Buy"  & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Buy_given_Sell_Logistic_plain  = ifelse(pred_plain_logit_Buy_Sell == "Buy"  & Buy_Sell == "Sell", TRUE, FALSE),
+                  pred_Sell_given_Buy_Logistic_plain  = ifelse(pred_plain_logit_Buy_Sell == "Sell" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Sell_given_Sell_Logistic_plain = ifelse(pred_plain_logit_Buy_Sell == "Sell" & Buy_Sell == "Sell", TRUE, FALSE),
+                  Correct_pred_Logistic_plain         = ifelse(pred_plain_logit_Buy_Sell == Buy_Sell, TRUE, FALSE),
+                  # Logistic Bias Reduction
+                  pred_Buy_given_Buy_BiasReduction    = ifelse(pred_BiasReduction_logit_Buy_Sell == "Buy"  & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Buy_given_Sell_BiasReduction   = ifelse(pred_BiasReduction_logit_Buy_Sell == "Buy"  & Buy_Sell == "Sell", TRUE, FALSE),
+                  pred_Sell_given_Buy_BiasReduction   = ifelse(pred_BiasReduction_logit_Buy_Sell == "Sell" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Sell_given_Sell_BiasReduction  = ifelse(pred_BiasReduction_logit_Buy_Sell == "Sell" & Buy_Sell == "Sell", TRUE, FALSE),
+                  Correct_pred_Logistic_BiasReduction = ifelse(pred_BiasReduction_logit_Buy_Sell == Buy_Sell, TRUE, FALSE),
+                  #Baysian Logistic
+                  pred_Buy_given_Buy_Bayesian    = ifelse(pred_Bayesian_logit_Buy_Sell == "Buy"  & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Buy_given_Sell_Bayesian   = ifelse(pred_Bayesian_logit_Buy_Sell == "Buy"  & Buy_Sell == "Sell", TRUE, FALSE),
+                  pred_Sell_given_Buy_Bayesian   = ifelse(pred_Bayesian_logit_Buy_Sell == "Sell" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Sell_given_Sell_Bayesian  = ifelse(pred_Bayesian_logit_Buy_Sell == "Sell" & Buy_Sell == "Sell", TRUE, FALSE),
+                  Correct_pred_Logistic_Bayesian = ifelse(pred_Bayesian_logit_Buy_Sell == Buy_Sell, TRUE, FALSE),
+                  # GLMnet Lasso
+                  pred_Buy_given_Buy_Lasso    = ifelse(pred_glmnet_lasso_Buy_Sell == "Buy" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Buy_given_Sell_Lasso   = ifelse(pred_glmnet_lasso_Buy_Sell == "Buy" & Buy_Sell == "Sell", TRUE, FALSE),
+                  pred_Sell_given_Buy_Lasso   = ifelse(pred_glmnet_lasso_Buy_Sell == "Sell" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Sell_given_Sell_Lasso  = ifelse(pred_glmnet_lasso_Buy_Sell == "Sell" & Buy_Sell == "Sell", TRUE, FALSE),
+                  Correct_pred_GLMnet_Lasso   = ifelse(pred_glmnet_lasso_Buy_Sell == Buy_Sell, TRUE, FALSE),
+                  # GLMnet Ridge
+                  pred_Buy_given_Buy_Ridge    = ifelse(pred_glmnet_ridge_Buy_Sell == "Buy" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Buy_given_Sell_Ridge   = ifelse(pred_glmnet_ridge_Buy_Sell == "Buy" & Buy_Sell == "Sell", TRUE, FALSE),
+                  pred_Sell_given_Buy_Ridge   = ifelse(pred_glmnet_ridge_Buy_Sell == "Sell" & Buy_Sell == "Buy", TRUE, FALSE),
+                  pred_Sell_given_Sell_Ridge  = ifelse(pred_glmnet_ridge_Buy_Sell == "Sell" & Buy_Sell == "Sell", TRUE, FALSE),
+                  Correct_pred_GLMnet_Ridge   = ifelse(pred_glmnet_ridge_Buy_Sell == Buy_Sell, TRUE, FALSE))
+    # Summarizing the results and computing Probability Statistics
+  #browser()
   Results_Summary <- Results_focus %>% 
-    dplyr::mutate(Correct_pred_Logistic_plain         = ifelse(Buy_Sell == pred_plain_logit_Buy_Sell, TRUE, FALSE),
-                  Correct_pred_Logistic_BiasReduction = ifelse(Buy_Sell == pred_BiasReduction_logit_Buy_Sell, TRUE, FALSE),
-                  Correct_pred_Logistic_Bayesian      = ifelse(Buy_Sell == pred_Bayesian_logit_Buy_Sell, TRUE, FALSE),
-                  Correct_pred_GLMnet_Lasso           = ifelse(Buy_Sell == pred_glmnet_lasso_Buy_Sell, TRUE, FALSE),
-                  Correct_pred_GLMnet_Ridge           = ifelse(Buy_Sell == pred_glmnet_ridge_Buy_Sell, TRUE, FALSE)) %>%
     dplyr::summarise(Count = as.integer(n()),
                      Count_Buy  = as.integer(sum(Buy_Sell == "Buy")),
-                     Percent_buy = Count_Buy/Count,
                      Count_Sell = as.integer(sum(Buy_Sell == "Sell")),
-                     Percent_sell =  Count_Sell/Count,
-                     accuracy_LinearGaussian = round(100 * sum(Correct_pred_LinearGaussian == TRUE)/Count,digits = 2),
-                     accuracy_Logistic_plain = round(100 * sum(Correct_pred_Logistic_plain == TRUE)/Count,digits = 2),
-                     accuracy_GLMnet_Lasso   = round(100 * sum(Correct_pred_GLMnet_Lasso == TRUE)/Count,digits = 2),
-                     accuracy_GLMnet_Ridge   = round(100 * sum(Correct_pred_GLMnet_Ridge == TRUE)/Count, digits = 2)) %>% t()
+                     Percent_buy = paste(round(100 * Count_Buy/Count, digits = 2), "%"),
+                     Percent_sell =  paste(round(100 * Count_Sell/Count,digits = 2), "%"),
+                     # LinearGaussian
+                     Prob_Buy_given_Buy_LinearGaussian   = paste(round(100 * sum(pred_Buy_given_Buy_LinearGaussian == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_LinearGaussian  = paste(round(100 * sum(pred_Buy_given_Sell_LinearGaussian == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_LinearGaussian  = paste(round(100 * sum(pred_Sell_given_Buy_LinearGaussian == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_LinearGaussian = paste(round(100 * sum(pred_Sell_given_Sell_LinearGaussian == TRUE)/Count_Sell,digits = 2),"%"),
+                     accuracy_LinearGaussian             = paste(round(100 * sum(Correct_pred_LinearGaussian == TRUE)/Count,digits = 2), "%"),
+                     # Logit Plain
+                     Prob_Buy_given_Buy_Logistic_plain   = paste(round(100 * sum(pred_Buy_given_Buy_Logistic_plain == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_Logistic_plain  = paste(round(100 * sum(pred_Buy_given_Sell_Logistic_plain == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_Logistic_plain  = paste(round(100 * sum(pred_Sell_given_Buy_Logistic_plain == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_Logistic_plain = paste(round(100 * sum(pred_Sell_given_Sell_Logistic_plain == TRUE)/Count_Sell,digits = 2),"%"),
+                     accuracy_Logistic_plain             = paste(round(100 * sum(Correct_pred_Logistic_plain == TRUE)/Count,digits = 2), "%"),
+                     # Logistic Bias Reduction
+                     Prob_Buy_given_Buy_BiasReduction   = paste(round(100 * sum(pred_Buy_given_Buy_BiasReduction == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_BiasReduction  = paste(round(100 * sum(pred_Buy_given_Sell_BiasReduction == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_BiasReduction  = paste(round(100 * sum(pred_Sell_given_Buy_BiasReduction == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Sell_BiasReduction = paste(round(100 * sum(pred_Sell_given_Sell_BiasReduction == TRUE)/Count_Buy,digits = 2),"%"),
+                     accuracy_BiasReduction             = paste(round(100 * sum(Correct_pred_Logistic_BiasReduction == TRUE)/Count,digits = 2), "%"),
+                     # Baysian Logistic
+                     Prob_Buy_given_Buy_Bayesian   = paste(round(100 * sum(pred_Buy_given_Buy_Bayesian == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_Bayesian  = paste(round(100 * sum(pred_Buy_given_Sell_Bayesian == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_Bayesian  = paste(round(100 * sum(pred_Sell_given_Buy_Bayesian == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_Bayesian = paste(round(100 * sum(pred_Sell_given_Sell_Bayesian == TRUE)/Count_Sell,digits = 2),"%"),
+                     accuracy_Bayesian             = paste(round(100 * sum(Correct_pred_Logistic_Bayesian == TRUE)/Count,digits = 2), "%"),
+                     # GLMnet Lasso
+                     Prob_Buy_given_Buy_Lasso   = paste(round(100 * sum(pred_Buy_given_Buy_Lasso == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_Lasso  = paste(round(100 * sum(pred_Buy_given_Sell_Lasso == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_Lasso  = paste(round(100 * sum(pred_Sell_given_Buy_Lasso == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_Lasso = paste(round(100 * sum(pred_Sell_given_Sell_Lasso == TRUE)/Count_Sell,digits = 2),"%"),
+                     accuracy_GLMnet_Lasso      = paste(round(100 * sum(Correct_pred_GLMnet_Lasso == TRUE) /Count,digits = 2),"%"),
+                     #GLMnet Ridge
+                     Prob_Buy_given_Buy_Ridge   = paste(round(100 * sum(pred_Buy_given_Buy_Ridge == TRUE)  /Count_Buy,digits = 2),"%"),
+                     Prob_Buy_given_Sell_Ridge  = paste(round(100 * sum(pred_Buy_given_Sell_Ridge == TRUE) /Count_Sell,digits = 2),"%"),
+                     Prob_Sell_given_Buy_Ridge  = paste(round(100 * sum(pred_Sell_given_Buy_Ridge == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_Ridge = paste(round(100 * sum(pred_Sell_given_Sell_Ridge == TRUE)/Count_Sell,digits = 2),"%"),
+                     accuracy_GLMnet_Ridge      = paste(round(100 * sum(Correct_pred_GLMnet_Ridge == TRUE)/Count, digits = 2), "%")) %>%
+    t()
   
-  return(Results_Summary)
+  probability_threshold   = paste0("Threshold: ",round(100 * threshold, digits = 2), "%")
+  colnames(Results_Summary) <- probability_threshold
+  res <- list(Summary = Results_Summary, TestResults = Results_focus, Thresh = threshold)
+  return(res)
 }
 
 
+Results_Summary_1 <- ModelPreictionResults(threshold = opt_t )$Summary # Result summary associated with opt_t
+Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2)$Summary # Result summary associated with opt_t2
+Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3)$Summary # Result summary associated with opt_t3
+Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4)$Summary # Result summary associated with opt_t4
+Results_Summary_5 <- ModelPreictionResults(threshold = opt_t5)$Summary # Result summary associated with opt_t5
+Results_Summary_all <- cbind(Results_Summary_1, Results_Summary_2, Results_Summary_3, Results_Summary_4, Results_Summary_5)
+View(Results_Summary_all)
 
-Results_Summary_1 <- ModelPreictionResults(threshold = opt_t)  # Result summary associated with opt_t
-Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2) # Result summary associated with opt_t2
-Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3) # Result summary associated with opt_t3
-Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4) # Result summary associated with opt_t4
-Results_Summary_5 <- ModelPreictionResults(threshold = opt_t5) # Result summary associated with opt_t5
+TestResults_1 <- ModelPreictionResults(threshold = opt_t )$TestResults # Result summary associated with opt_t
+View(TestResults_1)

@@ -115,5 +115,37 @@ data.set3 <- na.omit(data.set2)
 # http://www.stat.columbia.edu/~martin/W2024/R10.pdf
 
 
-# Outliar detection - TBD
-Training_data_regression_ <- OutlierMahdist(Training_data_regression)
+# Outliar detection - TBC
+# Histogram of Position Change in the training set
+hist(Training_data_regression$Position_change, probability = FALSE, breaks = 100)
+# Identifying the 50 most extreme position change
+idx1 <- which(Training_data_regression$Position_change %in% head(sort(Training_data_regression$Position_change), 25))
+idx2 <- which(Training_data_regression$Position_change %in% head(sort(Training_data_regression$Position_change, decreasing = TRUE), 25))
+# Plotting the histogram of Position Change after removing the most extreme observation
+hist(Training_data_regression$Position_change[-c(idx1, idx2)], probability = FALSE, breaks = 100)
+# Plotting density with ggplot
+library(ggplot2)
+p2 <- ggplot(Training_data_regression, aes(x = Position_change)) +
+             geom_density()
+p2
+
+# Clustering of Data using mixture models
+library(mclust)
+BIC <- mclustBIC(Training_data_regression$Position_change)
+plot(BIC)
+summary(BIC)
+mod1.1 <- Mclust(Training_data_regression$Position_change, x = BIC)
+summary(mod1.1,parameters = TRUE)
+plot(mod1.1, what = "classification")
+
+BIC2 <- mclustBIC(Training_data_regression$Position_change[-c(idx1, idx2)])
+mod1.2 <- Mclust(Training_data_regression$Position_change, x = BIC2)
+summary(mod1.2,parameters = TRUE)
+plot(mod1.2, what = "classification")
+
+mod2 <- MclustDA(data = Training_data_classification[,which(names(Training_data_classification) != "Buy_Sell")],
+                 class = Training_data_classification[,"Buy_Sell"],
+                 modelType = "EDDA")
+summary(mod2)
+
+mod3 <- mclustBIC(Training_data_classification[,which(names(Training_data_classification) != "Buy_Sell")])

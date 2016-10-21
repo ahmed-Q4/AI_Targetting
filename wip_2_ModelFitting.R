@@ -307,8 +307,8 @@ ModelPreictionResults <- function(threshold) {
                      # Logistic Bias Reduction
                      Prob_Buy_given_Buy_BiasReduction   = paste(round(100 * sum(pred_Buy_given_Buy_BiasReduction == TRUE)  /Count_Buy,digits = 2),"%"),
                      Prob_Buy_given_Sell_BiasReduction  = paste(round(100 * sum(pred_Buy_given_Sell_BiasReduction == TRUE) /Count_Sell,digits = 2),"%"),
-                     Prob_Sell_given_Buy_BiasReduction  = paste(round(100 * sum(pred_Sell_given_Buy_BiasReduction == TRUE) /Count_Sell,digits = 2),"%"),
-                     Prob_Sell_given_Sell_BiasReduction = paste(round(100 * sum(pred_Sell_given_Sell_BiasReduction == TRUE)/Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Buy_BiasReduction  = paste(round(100 * sum(pred_Sell_given_Buy_BiasReduction == TRUE) /Count_Buy,digits = 2),"%"),
+                     Prob_Sell_given_Sell_BiasReduction = paste(round(100 * sum(pred_Sell_given_Sell_BiasReduction == TRUE)/Count_Sell,digits = 2),"%"),
                      accuracy_BiasReduction             = paste(round(100 * sum(Correct_pred_Logistic_BiasReduction == TRUE)/Count,digits = 2), "%"),
                      # Baysian Logistic
                      Prob_Buy_given_Buy_Bayesian   = paste(round(100 * sum(pred_Buy_given_Buy_Bayesian == TRUE)  /Count_Buy,digits = 2),"%"),
@@ -342,9 +342,9 @@ Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2)$Summary # Result 
 Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3)$Summary # Result summary associated with opt_t3
 Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4)$Summary # Result summary associated with opt_t4
 Results_Summary_5 <- ModelPreictionResults(threshold = opt_t5)$Summary # Result summary associated with opt_t5
-Results_Summary_all <- cbind(Results_Summary_5, Results_Summary_4, Results_Summary_2, Results_Summary_1, Results_Summary_3)
+Results_Summary_all <- cbind(Results_Summary_5, Results_Summary_4, Results_Summary_2, Results_Summary_1, Results_Summary_3) %>% as.data.frame()
 
 View(Results_Summary_all)
 
-TestResults_1 <- ModelPreictionResults(threshold = opt_t )$TestResults # Result summary associated with opt_t
-View(TestResults_1)
+TestResults <- ModelPreictionResults(threshold = opt_t5 )$TestResults # Result summary associated with opt_t
+View(TestResults)

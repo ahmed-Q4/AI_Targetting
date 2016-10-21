@@ -67,7 +67,7 @@ m_Linear <- lm(Position_change ~ ., data = Training_data_regression)
 # 2) Logit/Probit Binomial GLM Model -----
 
 m_Logit <- glm(Buy_Sell ~ ., family=binomial(), data = Training_data_classification)
-perf_plot(mod = m_Logit, y = Training_data_classification[,"Buy_Sell"])
+ROCR::perf_plot(mod = m_Logit, y = Training_data_classification[,"Buy_Sell"])
 
 # When using plain glm, we get a warning: glm.fit: fitted probabilities numerically 0 or 1 occurred
 #
@@ -108,8 +108,8 @@ m_glmnet_ridge <- glmnet::glmnet(x = X, y = Y , family = "binomial", alpha = 0) 
 
 N_folds <- 10
 fold_id <- sample(1:N_folds,size=length(Y),replace=TRUE)
-m_cv_glmnet_lasso <- cv.glmnet(X,Y, foldid=fold_id, alpha=1, family = "binomial", type.measure="class") ## lasso regression - Sparse coeff
-m_cv_glmnet_ridge <- cv.glmnet(X,Y, foldid=fold_id, alpha=0, family = "binomial", type.measure="class") ## ridge regression - full coeff
+m_cv_glmnet_lasso <- glmnet::cv.glmnet(X,Y, foldid=fold_id, alpha=1, family = "binomial", type.measure="class") ## lasso regression - Sparse coeff
+m_cv_glmnet_ridge <- glmnet::cv.glmnet(X,Y, foldid=fold_id, alpha=0, family = "binomial", type.measure="class") ## ridge regression - full coeff
 plot(m_cv_glmnet_lasso)
 plot(m_cv_glmnet_ridge)
 
@@ -342,7 +342,8 @@ Results_Summary_2 <- ModelPreictionResults(threshold = opt_t2)$Summary # Result 
 Results_Summary_3 <- ModelPreictionResults(threshold = opt_t3)$Summary # Result summary associated with opt_t3
 Results_Summary_4 <- ModelPreictionResults(threshold = opt_t4)$Summary # Result summary associated with opt_t4
 Results_Summary_5 <- ModelPreictionResults(threshold = opt_t5)$Summary # Result summary associated with opt_t5
-Results_Summary_all <- cbind(Results_Summary_1, Results_Summary_2, Results_Summary_3, Results_Summary_4, Results_Summary_5)
+Results_Summary_all <- cbind(Results_Summary_5, Results_Summary_4, Results_Summary_2, Results_Summary_1, Results_Summary_3)
+
 View(Results_Summary_all)
 
 TestResults_1 <- ModelPreictionResults(threshold = opt_t )$TestResults # Result summary associated with opt_t

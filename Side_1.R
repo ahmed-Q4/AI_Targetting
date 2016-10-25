@@ -59,3 +59,13 @@ df_melt2 <-reshape2::melt(Training_data_regression, "Position_change") # %>% dpl
 ggplot(df_melt2,aes(x = value, y = Position_change)) +
   geom_point() +
   facet_wrap(~ variable, scales = "free", ncol = 5)
+
+# Outliers Detection
+library(HighDimOut)
+res.ABOD <- Func.ABOD(data=TestData[,1:2], basic=FALSE, perc=0.2)
+data.temp <- TestData[,1:2]
+data.temp$Ind <- NA
+data.temp[order(res.ABOD, decreasing = FALSE)[1:10],"Ind"] <- "Outlier"
+data.temp[is.na(data.temp$Ind),"Ind"] <- "Inlier"
+data.temp$Ind <- factor(data.temp$Ind)
+ggplot(data = data.temp) + geom_point(aes(x = x, y = y, color=Ind, shape=Ind))

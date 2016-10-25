@@ -131,15 +131,19 @@ p2
 # Multivariate approachess
 library(HighDimOut)
 # library(doParallel)
+foreach::getDoParWorkers()
 doParallel::registerDoParallel(cores=detectCores())
 # http://www.dbs.ifi.lmu.de/~zimek/publications/KDD2010/kdd10-outlier-tutorial.pdf
 # https://cran.r-project.org/web/packages/HighDimOut/vignettes/GoldenStateWarriors.html
 # As this might be time consumming, we will measure the time take to evaluate
 #
+# Prior to the implementation of outlier detection algorithms, it is important to normalize the raw data
+scaled_data <- scale(x = Training_data_regression, center = TRUE, scale = TRUE) %>% as.data.frame()
+names(scaled_data) <- names(Training_data_regression)
 # Start the clock!
 time_start <- proc.time()
 # Detect outliers using the angle based method
-res.ABOD <- Func.ABOD(data=Training_data_regression, basic=FALSE, perc=0.2)
+res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.2)
 # Stop the clock
 time_end <- proc.time()
 # Time elapsed

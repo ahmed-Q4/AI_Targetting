@@ -1,6 +1,6 @@
 # Subsetting the dataset for regression/Classification
 
-context_var <- c("Symbol", "Year",  "Date", 
+context_var <- c(#"Symbol", "Year",  "Date", 
                  "HasOptions", "SharkGrouping", "NumberHolders", "SharesOutstanding", "FSPermSecId")
 
 Y_var_potential <- grep(pattern = "Position", x = names(data.set3), value = TRUE)

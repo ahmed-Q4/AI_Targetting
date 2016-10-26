@@ -69,3 +69,13 @@ data.temp[order(res.ABOD, decreasing = FALSE)[1:10],"Ind"] <- "Outlier"
 data.temp[is.na(data.temp$Ind),"Ind"] <- "Inlier"
 data.temp$Ind <- factor(data.temp$Ind)
 ggplot(data = data.temp) + geom_point(aes(x = x, y = y, color=Ind, shape=Ind))
+
+
+# Outliers
+
+library(HighDimOut)
+library(plyr)
+data.scale1 <- t(aaply(.data = as.matrix(GoldenStatesWarriors[,-1]), .margins = 2, .fun = function(x) (x-mean(x, na.rm = T))/sd(x, na.rm = T)))
+summary(data.scale1)
+data.scale2 <- scale(GoldenStatesWarriors[, -1], center = TRUE, scale = TRUE )
+summary(data.scale2)

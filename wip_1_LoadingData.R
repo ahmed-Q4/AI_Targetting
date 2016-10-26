@@ -132,12 +132,31 @@ p2
 library(HighDimOut)
 # library(doParallel)
 foreach::getDoParWorkers()
-doParallel::registerDoParallel(cores=detectCores())
+doParallel::registerDoParallel(cores=detectCores() - 1L)
 # http://www.dbs.ifi.lmu.de/~zimek/publications/KDD2010/kdd10-outlier-tutorial.pdf
 # https://cran.r-project.org/web/packages/HighDimOut/vignettes/GoldenStateWarriors.html
 # As this might be time consumming, we will measure the time take to evaluate
 #
 # Prior to the implementation of outlier detection algorithms, it is important to normalize the raw data
+# http://stackoverflow.com/questions/15215457/standardize-data-columns-in-r
+library(dplyr)
+library(multidplyr)
+
+my_func <- function(x) {
+  data_tmp <- x[, names(x) %in% c("Date", "Year", "Symbol")]
+  scaled_data <- scale(x = data_tmp, center = TRUE, scale = TRUE) %>% as.data.frame()
+  res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.2)
+  score.trans.ABOD <- Func.trans(raw.score = score.ABOD, method = "ABOD")
+  x$ABOD_Score <- score.trans.ABOD
+  return(x)
+}
+
+
+scanned_data <- data.set3[, c(Y_var, X_var)] %>% # partition() %>% 
+                group_by(Year) %>% do(res = my_func(.))
+
+
+
 scaled_data <- scale(x = Training_data_regression, center = TRUE, scale = TRUE) %>% as.data.frame()
 names(scaled_data) <- names(Training_data_regression)
 # Start the clock!

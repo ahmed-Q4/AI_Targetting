@@ -79,3 +79,76 @@ data.scale1 <- t(aaply(.data = as.matrix(GoldenStatesWarriors[,-1]), .margins = 
 summary(data.scale1)
 data.scale2 <- scale(GoldenStatesWarriors[, -1], center = TRUE, scale = TRUE )
 summary(data.scale2)
+
+
+# ROC analysis
+# Method 2 -----
+library(pROC)
+#apply roc function
+analysis <- roc(response=Training_data_classification$Buy_Sell, predictor=m_Logit$fitted.values)
+e <- cbind(analysis$thresholds, analysis$sensitivities+analysis$specificities)
+opt_t <- subset(e,e[,2]==max(e[,2]))[,1]
+
+#Plot ROC Curve
+plot(1-analysis$specificities,analysis$sensitivities,type="l",
+     ylab="Sensitiviy",xlab="1-Specificity",col="black",lwd=2,
+     main = "ROC Curve for Logit GLM")
+abline(a=0,b=1)
+abline(v = opt_t) #add optimal t to ROC curve
+opt_t #print t
+
+# Model 2
+analysis <- roc(response=Training_data_classification$Buy_Sell, predictor=m_Logit_Bayesian$fitted.values)
+e <- cbind(analysis$thresholds,1 * analysis$sensitivities+analysis$specificities)
+opt_t <- subset(e,e[,2]==max(e[,2]))[,1]
+
+#Plot ROC Curve
+plot(1-analysis$specificities,analysis$sensitivities,type="l",
+     ylab="Sensitiviy",xlab="1-Specificity",col="black",lwd=2,
+     main = "ROC Curve for Baysian Logit GLM")
+abline(a=0,b=1)
+abline(v = opt_t) #add optimal t to ROC curve
+opt_t
+
+# Method 3 -----
+library(ROCR)
+# https://hopstat.wordpress.com/2014/12/19/a-small-introduction-to-the-rocr-package/
+# Logit model
+pred_logit <- prediction(predictions = m_Logit$fitted.values, labels = Training_data_classification$Buy_Sell)
+
+slotNames(pred_logit)
+
+roc.perf = performance(pred_logit, measure = "tpr", x.measure = "fpr")
+plot(roc.perf)
+abline(a=0, b= 1)
+# The further away from the diagonal line, the better.
+slotNames(roc.perf)
+
+
+cost.perf = performance(pred_logit, "cost")
+plot(cost.perf)
+cost.perf_assymetric = performance(pred_logit, "cost", cost.fp = 2, cost.fn = 1)
+plot(cost.perf_assymetric)
+acc.perf = performance(pred_logit, measure = "acc")
+plot(acc.perf)
+MutualInformation.perf = performance(pred_logit, measure = "mi")
+plot(MutualInformation.perf)
+# Precision/Recall Curve
+perf1 <- performance(pred_logit, "prec", "rec")
+plot(perf1)
+
+# Determining optimal cutoff point
+pred_logit@cutoffs[[1]][which.min(roc.perf@y.values[[1]])]
+
+# Minimizing cost associated with (False Positive, False Negative)
+pred_logit@cutoffs[[1]][which.min(cost.perf@y.values[[1]])]
+pred_logit@cutoffs[[1]][which.min(cost.perf_assymetric@y.values[[1]])]
+
+# Maximizing accuracy
+pred_logit@cutoffs[[1]][which.max(acc.perf@y.values[[1]])]
+
+# the above command in More details
+ind = which.max( slot(acc.perf, "y.values")[[1]] )
+acc = slot(acc.perf, "y.values")[[1]][ind]
+cutoff = slot(acc.perf, "x.values")[[1]][ind]
+print(c(accuracy= acc, cutoff = cutoff))

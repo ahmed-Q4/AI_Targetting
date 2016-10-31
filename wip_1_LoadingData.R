@@ -130,30 +130,51 @@ p2 <- ggplot(Training_data_regression, aes(x = Position_change)) +
 p2
 # Multivariate approachess
 library(HighDimOut)
-# library(doParallel)
+library(foreach)
+library(doParallel)
 foreach::getDoParWorkers()
-doParallel::registerDoParallel(cores=detectCores() - 1L)
+cl <- makeCluster(parallel::detectCores() - 1L, outfile="")
+cl <- makeCluster(6L, outfile="")
+doParallel::registerDoParallel(cl)
+clusterEvalQ(cl, library(foreach))
 # http://www.dbs.ifi.lmu.de/~zimek/publications/KDD2010/kdd10-outlier-tutorial.pdf
 # https://cran.r-project.org/web/packages/HighDimOut/vignettes/GoldenStateWarriors.html
 # As this might be time consumming, we will measure the time take to evaluate
 #
 # Prior to the implementation of outlier detection algorithms, it is important to normalize the raw data
 # http://stackoverflow.com/questions/15215457/standardize-data-columns-in-r
-library(dplyr)
-library(multidplyr)
+
 
 my_func <- function(x) {
-  data_tmp <- x[, names(x) %in% c("Date", "Year", "Symbol")]
+  print(unique(x$Year))
+  data_tmp <- x[, !(names(x) %in% c("Date", "Year", "Symbol"))] %>% as.data.frame()
   scaled_data <- scale(x = data_tmp, center = TRUE, scale = TRUE) %>% as.data.frame()
-  res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.2)
-  score.trans.ABOD <- Func.trans(raw.score = score.ABOD, method = "ABOD")
+  res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.1)
+  # We are not going to transform the data since"
+  # a) only 1 method is used
+  # b) some of the angle variance (output values) are 0
+  # score.trans.ABOD <- HighDimOut::Func.trans(raw.score = res.ABOD, method = "ABOD")
+  # See Func.trans for description and for details:
+  # http://www.dbs.ifi.lmu.de/~zimek/publications/SDM2011/SDM11-outlier-preprint.pdf
+  score.trans.ABOD <- res.ABOD
   x$ABOD_Score <- score.trans.ABOD
   return(x)
 }
 
 
 scanned_data <- data.set3[, c(Y_var, X_var)] %>% # partition() %>% 
-                group_by(Year) %>% do(res = my_func(.))
+                dplyr::group_by(Year) %>% dplyr::do(res = my_func(.))
+
+stopCluster(cl)
+
+library(dplyr)
+library(multidplyr)
+# Using a user defined function with multidplyr - a pararell version of dplyr
+# https://github.com/hadley/multidplyr/issues/14
+#
+#cluster <- create_cluster(detectCores() - 1L)
+#set_default_cluster(cluster)
+
 
 
 

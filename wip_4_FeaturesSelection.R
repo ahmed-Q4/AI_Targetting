@@ -1,6 +1,6 @@
 # Using plain R-code
 source('feature_selection_CMIM.r')
-features_selected_CMIM_regression <- CMIM.fast(d = Training_data_regression[, which(names(Training_data_regression) != Y_var)], 
+features_selected_CMIM_regression <- CMIM.standard(d = Training_data_regression[, which(names(Training_data_regression) != Y_var)], 
                                                y = Training_data_regression[, Y_var])
 
 features_selected_CMIM_classification <- CMIM.fast(d = Training_data_classification[,which(names(Training_data_classification) != "Buy_Sell")], 
@@ -23,3 +23,4 @@ features_randomForest <- random.forest.importance(formula = Buy_Sell ~ ., data =
 # Figure out how to use condinformation function:
 # http://search.r-project.org/library/infotheo/html/condinformation.html
 # to do the same as in the plain R-code above http://www.ams.jhu.edu/~yqin/cvrg/feature_selection_commented.r
+# with the help of http://stats.stackexchange.com/questions/13389/information-gain-mutual-information-and-related-measures

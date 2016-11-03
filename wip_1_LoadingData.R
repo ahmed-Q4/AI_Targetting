@@ -50,6 +50,7 @@ for(f in files) {
 
 ## Construction & alignment of variables in dataset
 data.set <- dbReadTable(con, "SharkPositions_good") %>% dplyr::mutate(Date = as.Date(Date))
+Positions_dates <- sort(unique(data.set$Date))
 # saveRDS(data.set, file = "DataSet.rds")
 
 
@@ -58,6 +59,33 @@ counter <- 0
 
 # To get memory used
 pryr::mem_used()
+
+EMA_irregularTS <- function(df, min.num.pts) {
+  browser()
+  View(df)
+  xts.df <- xts::xts(df$Value, order.by = df$Date)
+  tt_DEMA <- TTR::DEMA(xts.df, n = 4)
+  tt_ZLEMA <- TTR::ZLEMA(xts.df, n = 4)
+  
+  # tt_fit <- forecast::auto.arima(xts.df)
+  plot(index(xts.df), xts.df,col="red")
+  lines(index(xts.df), tt_ZLEMA ,col="blue")
+  lines(index(xts.df), tt_DEMA,col="black")
+  browser()
+}
+
+ProcessFundamental <- function(df, fn = NULL, min.num.pts = 1, col_name = "Value") {
+  # Check if the variable exist in the table.
+  if(is.null(fn) | !(col_name %in% names(df))) return(df)
+  # Check if the function exist in the workspace to apply it
+  if(!exists(fn)) {
+    message("Supplied Function does not exist in the workspace")
+    return(df)
+  }
+  dots <- list(lazyeval::interp(~ f(x, y), 
+               .values = list(f = as.name(fn), x = as.name("."), y = as.name(min.num.pts))))
+  res <- df %>% dplyr::group_by(Symbol) %>% dplyr::do_(.dots = setNames(dots, "ProcessedValue"))
+}
 
 for(t in tbls_list) {
   # Verbose msg
@@ -74,8 +102,9 @@ for(t in tbls_list) {
             # Keeping only 1 data point per symbol per Position Date
             dplyr::arrange(Symbol, desc(Date)) %>%
             dplyr::distinct(Symbol, Next_Pos_date, .keep_all = TRUE)
-  
-  # Renaming the variable before adding them to the data_set
+  # https://gist.github.com/steadyfish/ccb0896b1fa10f8c2528#file-dplyr_functions_programmatic_use-r
+  # data.X_Processed <- ProcessFundamental(data.X, fn = NULL)
+  # data.X_Processed <- ProcessFundamental(data.X, fn = "EMA_irregularTS")
   names(data.X)[which(names(data.X) == "Date")] <- paste0("Date_", t)
   if(NCOL(data.X) > 3) names(data.X)[which(names(data.X) == "Value")] <- t
   # Constructing the dataset

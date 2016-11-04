@@ -136,6 +136,11 @@ dbWriteTable(con, "data_set", data.set2, overwrite = TRUE)
 data.set2 <- dbReadTable(con, "data_set")
 data.set3 <- na.omit(data.set2)
 
+pts_per_symbol <- dplyr::group_by(data.set3, Symbol) %>% dplyr::summarise(Count = n()) %>% dplyr::arrange()
+symbol_30 <- dplyr::filter(pts_per_symbol, Count >= 30)
+
+data.set4 <- dplyr::semi_join(data.set3, symbol_30, by = "Symbol")
+
 
 # Features Selection - TBD
 # ref:

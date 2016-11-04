@@ -11,28 +11,36 @@ X_var <-  setdiff(names(data.set3),
 # Identification of Training & Testing data set ------
 
 # Random Sample vs Specific years for training set
+# RANDOM_TRAINING <- FALSE
+# FRACTION_TRAINING <- 0.75
 
-RANDOM_TRAINING <- FALSE
-FRACTION_TRAINING <- 0.75
+Create_Train_Testing_data <- function(RANDOM_TRAINING = FALSE, data.set = data.set3, FRACTION_TRAINING = 0.75,
+                                      Y_Var = Y_var, X_Var = X_var, split_var = "Year", split_test_val = 2015) {
+  
+  if(RANDOM_TRAINING == TRUE) {
+    
+    n_samples <- floor(NROW(data.set) * FRACTION_TRAINING)
+    sample_ids <- sample.int(n = NROW(data.set), size = n_samples, replace = FALSE)
+    Training_data_regression <- data.set[sample_ids , c(Y_Var, X_Var)]
+    Test_data_regression     <- data.set[-sample_ids, c(Y_Var, X_Var)]
+    
+  } else {
+    # Splitting training/Testing
+    split_dataset <- as.numeric(sort(unique(data.set[[split_var]])))
 
-if(RANDOM_TRAINING == TRUE) {
+    split_training_val <- setdiff(split_dataset, split_test_val)
+    
+    filter_crit_training <- lazyeval::interp(~ filter_var %in% split_training_val, filter_var = as.name(split_var))
+    Training_data_regression <- data.set %>% dplyr::filter_(filter_crit_training) %>%
+                                dplyr::select_(.dots = c(Y_Var, X_Var))
+    
+    filter_crit_testing  <- lazyeval::interp(~ filter_var %in% split_test_val, filter_var = as.name(split_var))
+    Test_data_regression <- data.set %>% dplyr::filter_(filter_crit_testing) %>%
+                            dplyr::select_(.dots = c(Y_Var, X_Var))
+  }
   
-  n_samples <- floor(NROW(data.set3) * FRACTION_TRAINING)
-  sample_ids <- sample.int(n = NROW(data.set3), size = n_samples, replace = FALSE)
-  Training_data_regression <- data.set3[sample_ids , c(Y_var, X_var)]
-  Test_data_regression     <- data.set3[-sample_ids, c(Y_var, X_var)]
-  
-} else {
-  # Splitting training/Testing
-  Years_dataset <- as.numeric(sort(unique(data.set3$Year)))
-  Test_years <- c(2015)
-  Training_years <- setdiff(Years_dataset, Test_years)
-  
-  Training_data_regression <- dplyr::filter(data.set3, Year %in% Training_years) %>%
-                              dplyr::select_(.dots = c(Y_var, X_var))
-  
-  Test_data_regression <- dplyr::filter(data.set3, Year %in% Test_years) %>% 
-                          dplyr::select_(.dots = c(Y_var, X_var))
+  return(res  = list(Training_data = Training_data_regression, Test_data = Test_data_regression ))
+
 }
 
 

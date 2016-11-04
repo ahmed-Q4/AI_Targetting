@@ -1,3 +1,8 @@
+
+# library(data.table)
+# mydata<-fread("./own_13f_holdings_hist_1.txt")
+
+
 # Shark Position Processing
 
 SharkPositions <- read.csv("./distinctSecurities.csv", stringsAsFactors=FALSE) %>% 

@@ -183,7 +183,7 @@ clusterEvalQ(cl, library(foreach))
 # Prior to the implementation of outlier detection algorithms, it is important to normalize the raw data
 # http://stackoverflow.com/questions/15215457/standardize-data-columns-in-r
 
-
+source("./my_ABOD.R")
 my_func <- function(x) {
   print(unique(x$Year))
   data_tmp <- x[, !(names(x) %in% c("Date", "Year", "Symbol"))] %>% as.data.frame()
@@ -197,6 +197,7 @@ my_func <- function(x) {
   # http://www.dbs.ifi.lmu.de/~zimek/publications/SDM2011/SDM11-outlier-preprint.pdf
   score.trans.ABOD <- res.ABOD
   x$ABOD_Score <- score.trans.ABOD
+  gc()
   return(x)
 }
 

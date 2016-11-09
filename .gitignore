@@ -58,5 +58,6 @@ distinctSecurities.csv
 
 # Adding workspaces to gitignore
 *.RData
+.Rhistory
 # !Workspace_*.RData
 

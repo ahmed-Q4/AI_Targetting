@@ -1,3 +1,8 @@
+
+# library(data.table)
+# mydata<-fread("./own_13f_holdings_hist_1.txt")
+
+
 # Shark Position Processing
 
 SharkPositions <- read.csv("./distinctSecurities.csv", stringsAsFactors=FALSE) %>% 
@@ -50,6 +55,7 @@ for(f in files) {
 
 ## Construction & alignment of variables in dataset
 data.set <- dbReadTable(con, "SharkPositions_good") %>% dplyr::mutate(Date = as.Date(Date))
+Positions_dates <- sort(unique(data.set$Date))
 # saveRDS(data.set, file = "DataSet.rds")
 
 
@@ -58,6 +64,33 @@ counter <- 0
 
 # To get memory used
 pryr::mem_used()
+
+EMA_irregularTS <- function(df, min.num.pts) {
+  browser()
+  View(df)
+  xts.df <- xts::xts(df$Value, order.by = df$Date)
+  tt_DEMA <- TTR::DEMA(xts.df, n = 4)
+  tt_ZLEMA <- TTR::ZLEMA(xts.df, n = 4)
+  
+  # tt_fit <- forecast::auto.arima(xts.df)
+  plot(index(xts.df), xts.df,col="red")
+  lines(index(xts.df), tt_ZLEMA ,col="blue")
+  lines(index(xts.df), tt_DEMA,col="black")
+  browser()
+}
+
+ProcessFundamental <- function(df, fn = NULL, min.num.pts = 1, col_name = "Value") {
+  # Check if the variable exist in the table.
+  if(is.null(fn) | !(col_name %in% names(df))) return(df)
+  # Check if the function exist in the workspace to apply it
+  if(!exists(fn)) {
+    message("Supplied Function does not exist in the workspace")
+    return(df)
+  }
+  dots <- list(lazyeval::interp(~ f(x, y), 
+               .values = list(f = as.name(fn), x = as.name("."), y = as.name(min.num.pts))))
+  res <- df %>% dplyr::group_by(Symbol) %>% dplyr::do_(.dots = setNames(dots, "ProcessedValue"))
+}
 
 for(t in tbls_list) {
   # Verbose msg
@@ -74,8 +107,9 @@ for(t in tbls_list) {
             # Keeping only 1 data point per symbol per Position Date
             dplyr::arrange(Symbol, desc(Date)) %>%
             dplyr::distinct(Symbol, Next_Pos_date, .keep_all = TRUE)
-  
-  # Renaming the variable before adding them to the data_set
+  # https://gist.github.com/steadyfish/ccb0896b1fa10f8c2528#file-dplyr_functions_programmatic_use-r
+  # data.X_Processed <- ProcessFundamental(data.X, fn = NULL)
+  # data.X_Processed <- ProcessFundamental(data.X, fn = "EMA_irregularTS")
   names(data.X)[which(names(data.X) == "Date")] <- paste0("Date_", t)
   if(NCOL(data.X) > 3) names(data.X)[which(names(data.X) == "Value")] <- t
   # Constructing the dataset
@@ -107,6 +141,11 @@ dbWriteTable(con, "data_set", data.set2, overwrite = TRUE)
 data.set2 <- dbReadTable(con, "data_set")
 data.set3 <- na.omit(data.set2)
 
+pts_per_symbol <- dplyr::group_by(data.set3, Symbol) %>% dplyr::summarise(Count = n()) %>% dplyr::arrange()
+symbol_30 <- dplyr::filter(pts_per_symbol, Count >= 30)
+
+data.set4 <- dplyr::semi_join(data.set3, symbol_30, by = "Symbol")
+
 
 # Features Selection - TBD
 # ref:
@@ -128,6 +167,67 @@ library(ggplot2)
 p2 <- ggplot(Training_data_regression, aes(x = Position_change)) +
              geom_density()
 p2
+# Multivariate approachess
+library(HighDimOut)
+library(foreach)
+library(doParallel)
+foreach::getDoParWorkers()
+cl <- makeCluster(parallel::detectCores() - 1L, outfile="")
+cl <- makeCluster(6L, outfile="")
+doParallel::registerDoParallel(cl)
+clusterEvalQ(cl, library(foreach))
+# http://www.dbs.ifi.lmu.de/~zimek/publications/KDD2010/kdd10-outlier-tutorial.pdf
+# https://cran.r-project.org/web/packages/HighDimOut/vignettes/GoldenStateWarriors.html
+# As this might be time consumming, we will measure the time take to evaluate
+#
+# Prior to the implementation of outlier detection algorithms, it is important to normalize the raw data
+# http://stackoverflow.com/questions/15215457/standardize-data-columns-in-r
+
+source("./my_ABOD.R")
+my_func <- function(x) {
+  print(unique(x$Year))
+  data_tmp <- x[, !(names(x) %in% c("Date", "Year", "Symbol"))] %>% as.data.frame()
+  scaled_data <- scale(x = data_tmp, center = TRUE, scale = TRUE) %>% as.data.frame()
+  res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.1)
+  # We are not going to transform the data since"
+  # a) only 1 method is used
+  # b) some of the angle variance (output values) are 0
+  # score.trans.ABOD <- HighDimOut::Func.trans(raw.score = res.ABOD, method = "ABOD")
+  # See Func.trans for description and for details:
+  # http://www.dbs.ifi.lmu.de/~zimek/publications/SDM2011/SDM11-outlier-preprint.pdf
+  score.trans.ABOD <- res.ABOD
+  x$ABOD_Score <- score.trans.ABOD
+  gc()
+  return(x)
+}
+
+
+scanned_data <- data.set3[, c(Y_var, X_var)] %>% # partition() %>% 
+                dplyr::group_by(Year) %>% dplyr::do(res = my_func(.))
+
+stopCluster(cl)
+
+library(dplyr)
+library(multidplyr)
+# Using a user defined function with multidplyr - a pararell version of dplyr
+# https://github.com/hadley/multidplyr/issues/14
+#
+#cluster <- create_cluster(detectCores() - 1L)
+#set_default_cluster(cluster)
+
+
+
+
+scaled_data <- scale(x = Training_data_regression, center = TRUE, scale = TRUE) %>% as.data.frame()
+names(scaled_data) <- names(Training_data_regression)
+# Start the clock!
+time_start <- proc.time()
+# Detect outliers using the angle based method
+res.ABOD <- Func.ABOD(data=scaled_data, basic=FALSE, perc=0.2)
+# Stop the clock
+time_end <- proc.time()
+# Time elapsed
+(time_end - time_start)
 
 # Clustering of Data using mixture models
 library(mclust)

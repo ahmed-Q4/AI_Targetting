@@ -152,3 +152,15 @@ ind = which.max( slot(acc.perf, "y.values")[[1]] )
 acc = slot(acc.perf, "y.values")[[1]][ind]
 cutoff = slot(acc.perf, "x.values")[[1]][ind]
 print(c(accuracy= acc, cutoff = cutoff))
+
+
+####### TTR Indicator ------
+View(df)
+xts.df <- xts::xts(df$Value, order.by = df$Date)
+tt_DEMA <- TTR::DEMA(xts.df, n = 4)
+tt_ZLEMA <- TTR::ZLEMA(xts.df, n = 4)
+
+# tt_fit <- forecast::auto.arima(xts.df)
+plot(index(xts.df), xts.df,col="red")
+lines(index(xts.df), tt_ZLEMA ,col="blue")
+lines(index(xts.df), tt_DEMA,col="black")

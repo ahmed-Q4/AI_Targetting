@@ -30,7 +30,7 @@ SharkPositions_good <- data.set <- dplyr::semi_join(SharkPositions, good_symbols
 dbWriteTable(con, "SharkPositions_good", SharkPositions_good)
 
 # Processing fundamental data and saving it to db -----.
-data_path <- "./Fundamentals_9_17_2016/fundamentals_9_17_2016"
+data_path <- "./fundamentals_10_15_2016/"
 files <- dir(path = data_path, pattern = "_Request")
 for(f in files) {
   message(paste("Processing File:", f))
@@ -99,7 +99,8 @@ for(t in tbls_list) {
   
   message(paste0("Processing table number: ", counter, ". TableName/Fundamental data: ", t, ". Memory used: ", pryr::mem_used()))
   # Looping through all the tables in the db excluding the sharkpositions table
-  if (t %in% c("sharkpositions", "sharkpositions_good", "SharkPositions" , "SharkPositions_good" , "data_set")) next
+  if (t %in% c("sharkpositions", "sharkpositions_good", "SharkPositions" , "SharkPositions_good" , "data_set",
+               "sec_ticker_exchange", "own_inst_hist")) next
   data.X <- dbReadTable(con, t) %>% dplyr::mutate(Date = as.Date(Date)) %>%
             dplyr::rowwise() %>% 
             dplyr::mutate(Next_Pos_date = suppressWarnings(Positions_dates[min(which(Positions_dates > Date))])) %>%

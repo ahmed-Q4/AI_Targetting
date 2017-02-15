@@ -54,6 +54,38 @@ na.locf_tbl <- function(my_tbl = Fundamental_data, dt_var = "Q_Ends") {
 
 cleanMem <- function(n=10) { for (i in 1:n) gc() }
 
+conformal_prediction_CI <- function(model, new_data, confidence = 0.9) {
+  # Computing variables for Comformal Prediction Confidence Intervals
+  # See CalcualteCVScores, CalculatesPValues method in the conformal R-package
+  # https://github.com/isidroc/conformal/edit/master/conformal/R/ConformalClassification.R
+  
+  # Computing the conformaty measure
+  MondrianICP <- model$finalModel$votes
+  MondrianICP <- apply(MondrianICP, 2, sort, decreasing=FALSE)
+  NonconformityScoresMatrix <- MondrianICP
+  
+  # Calculating Confidence Level for class prediction
+  pred <- predict(model$finalModel, newdata = new_data ,predict.all=TRUE) # individual or aggregate
+  
+  ntrees <- model$finalModel$ntree
+  votes <- apply(pred$individual,1,function(x){table(x)})
+  if(is.list(votes)) {
+    out <- c()
+    # As defined in the original code. However from testing we found that votes is a matrix and not a list as in the example given in the package
+    for (i in colnames(NonconformityScoresMatrix)){
+      out<-cbind(out,sapply(votes,function(x) x[i]))
+    }
+  } else out <- t(votes)
+  
+  out[is.na(out)] <- 0
+  out <- out/ntrees
+  colnames(out) <- colnames(NonconformityScoresMatrix)
+  
+  pval <- t(apply(out,1,function(x){ apply(do.call(rbind, lapply(as.data.frame(t(NonconformityScoresMatrix)), "<", x)),2,sum)    }))
+  pval <- pval / nrow(NonconformityScoresMatrix)
+  return(pval)
+}
+
 
 # Creating MySQL connection locally ----
 library(RMySQL)
@@ -118,10 +150,11 @@ library(caret)
 library(randomForest)
 library(RFinfer)
 library(ROCR)
+library(conformal)
 # Verbose - to be tested
-verbose <- TRUE
+verbose <-FALSE
 # Debug funds
-debug_flag <- FALSE
+debug_flag <- TRUE
 debug_funds <- c("04B8CT-E", "04BK4J-E")
 debug_funds_bigTraining <- c("04BFN4-E", "04CT14-E", "04B9YF-E")
 debug_seq <- which(funds_ids$FACTSET_FUND_ID %in% debug_funds_bigTraining)
@@ -131,13 +164,13 @@ debug_seq <- which(funds_ids$FACTSET_FUND_ID %in% debug_funds_bigTraining)
 ClassificationModel <- "RandomForest"
 # Sampling method to correct of class imbalance in the case of Entry/Exit. Possible Value: up, down
 samplingMethod4EntryExit <- "down"
-writeModelResults2Disk <- TRUE
+writeModelResults2Disk <- FALSE
 
 
 # TO DO: Normalize and scale the features before fitting
 t_start <- Sys.time()
 Results_finals <- vector(mode = "list", length = 5)
-for (i in 2:2) {
+for (i in 1:3) {
   ##  Looping through different dataset:
   # i = 1: Entry
   # i = 2: Change in Position
@@ -148,17 +181,27 @@ for (i in 2:2) {
                          "3" = "Exit")
   
   print(paste("Modeling:", fitting_data))
+  if(debug_flag) {
+    con_lcl <- dbConnect(RMySQL::MySQL(),  default.file = "~/.my.cnf", group = "local_intel")
+    con_RDS <- dbConnect(RMySQL::MySQL(),  default.file = "~/.my.cnf", group = "RDS")
+    con_rds_check <- dbGetQuery(conn = con_RDS, statement = "SELECT version();")
+    con_lcl_check <- dbGetQuery(conn = con_lcl, statement = "SELECT version();")
+  }
   
-  Results_finals[[i]] <- foreach(j = 1:dim(funds_ids)[1],
-                                   .combine = list, .multicombine = TRUE,
-                                   .maxcombine = dim(funds_ids)[1] + 1, .export = NULL, .noexport= c('con_lcl','con_RDS'), 
-                                   .packages = c("caret","glmnet", "ROCR", "randomForest")) %dopar%  {
+  browser()
+  
+  # Results_finals[[i]] <- foreach(j = 1:dim(funds_ids)[1],
+  #                                  .combine = list, .multicombine = TRUE,
+  #                                  .maxcombine = dim(funds_ids)[1] + 1, .export = NULL, .noexport= c('con_lcl','con_RDS'), 
+  #                                  .packages = c("caret","glmnet", "ROCR", "randomForest", "conformal")) %dopar%  {
 
-                                   #results_debug <- list()
-                                   #for(k in 1:3){ # length(debug_seq)) { # browser()
-                                        # browser()
-                                        # j = debug_seq[k]
+                                   results_debug <- list()
+                                   for(k in 1:3){ # length(debug_seq)) { # browser()
+                                        browser()
+                                        j = debug_seq[k]
                                    # j = k
+                                   # Setting the seed for reproducability 
+                                   set.seed(j)
                                     #Creating a list to save results
                                    res2ret <- list(Fund_ID = NULL, RegFit_warning = NULL, RegFit_error = NULL, Prob_Threshold = NULL, Results_coeff = NULL, Results_stat = NULL,
                                                    Insufficient_data = NULL, Training_N = NULL, Testing_N = NULL, fitting_data = fitting_data, Info.Msg = NULL,
@@ -174,7 +217,7 @@ for (i in 2:2) {
                                      # Creating a single (local) file to write diagnostic to:
                                      fname <- paste("Verbose_Log", Sys.Date(), ClassificationModel, samplingMethod4EntryExit, sep='-')
                                      # message(paste0("Processing fund:", f ,". Memory used: ", pryr::mem_used()))
-                                     verbose_msg <- paste0("Worker: ", paste(Sys.info()[['nodename']], Sys.getpid(), sep='-'),
+                                     verbose_msg <- paste0(fitting_data, ", Worker: ", paste(Sys.info()[['nodename']], Sys.getpid(), sep='-'),
                                                            ", j = ", j,", Processing fund:", f ,", Memory used: ", pryr::mem_used())
                                      cat(verbose_msg, file = paste0(fname, ".txt"), sep = "\n", append = TRUE)
                                      # print(verbose_msg)
@@ -362,12 +405,17 @@ for (i in 2:2) {
                                    X_caret <- data.frame(predict(X_caret_dummy, newdata = Training_data[, X_Var]))
                                    Y_caret <- Training_data[[Y_Var]]
                                    
-                                   objControl <- trainControl(method='cv', number = N_folds, returnResamp='none', 
+                                   objControl <- trainControl(method='cv', number = N_folds, 
+                                                              # returnResamp='none', 
+                                                              #savePredictions = TRUE,
+                                                              # Changed to the below value for conformal prediction.
+                                                              returnResamp = "final",
                                                               savePredictions = TRUE)
                                    
                                    # Upsampling the entry/exit obserrvation when trainning the classification model
                                    # http://dpmartin42.github.io/blogposts/r/imbalanced-classes-part-1
                                    if(i %in% c(1,3)) objControl$sampling <- samplingMethod4EntryExit
+                                   browser()
                                    
                                    glmnet_lasso <- tryCatch(
                                      # http://stackoverflow.com/questions/12193779/how-to-write-trycatch-in-r
@@ -381,8 +429,10 @@ for (i in 2:2) {
                                                      # Random Forest Modeling
                                                      "RANDOMFOREST" =  train(X_caret, Y_caret, method='rf', metric = "Accuracy", trControl=objControl, ntree = 100,
                                                                              ## Tell randomForest to sample by strata.. That means within each class
-                                                                             strata = Y_caret,
-                                                                             tuneGrid = expand.grid(.mtry = c(1, 3, 5, 7, 10)))
+                                                                             strata = Y_caret, sampsize = rep(min(table(Y_caret)), 2),
+                                                                             tuneGrid = expand.grid(.mtry = c(1, 3, 5, 7, 10)),
+                                                                             # parameters value for comformal prediction
+                                                                             keep.forest=TRUE, predict.all=TRUE, norm.votes=TRUE)
                                      )
                                        
                                        
@@ -398,7 +448,7 @@ for (i in 2:2) {
                                        # return(res2ret)
                                      }
                                    )
-                                   #browser()
+                                   browser()
                                    if(any(class(glmnet_lasso) %in% c("warning", "error"))) {
                                      #Results_final[[counter]] <- res2ret
                                      ifelse(debug_flag, next, return(res2ret))

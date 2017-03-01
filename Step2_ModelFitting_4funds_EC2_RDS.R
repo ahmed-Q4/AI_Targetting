@@ -93,6 +93,21 @@ conformal_prediction_score <- function(model, new_data, details = FALSE) {
   return(res)
 }
 
+
+ls.S3 <- function(bkt = "q4quant", path = "_ModelResults/1_Entry/_ResultsList/"){
+  
+  res_tmp <- get_bucket(bucket = bkt, prefix = path)
+  res <- data.frame(FileName = sapply(res_tmp, FUN = function(x){x$Key}), stringsAsFactors = FALSE)
+  while(NROW(res) %% 1000 == 0) {
+    res_tmp <- get_bucket(bucket = bkt, prefix = path, marker = res$FileName[NROW(res)])
+    res_tmp2 <- data.frame(FileName = sapply(res_tmp, FUN = function(x){x$Key}), stringsAsFactors = FALSE)
+    res <- rbind(res, res_tmp2)
+  }
+  res <- res %>% dplyr::mutate(FileName = gsub(pattern = path, x = FileName, replacement = "", fixed = TRUE)) %>%
+         dplyr::filter(FileName != "")
+  return(res)
+}
+
 # Creating MySQL connection locally ----
 library(RMySQL)
 # con <- dbConnect(RMySQL::MySQL(),  default.file = "~/.my.cnf", group = "local_intel2")
@@ -127,13 +142,19 @@ save.model.path <- "C:/Users/Administrator/Documents/R_workspaces/AI_Targetting/
 #### Funds_Ids for medium samples (size = 1000)
 funds_ids <- dbGetQuery(conn = con_lcl_master, "SELECT FACTSET_FUND_ID FROM fund_ids_us")
 
+# Skipping Processed funds stored in S3.
+library(aws.s3)
+processedFunds <- ls.S3(bkt = "q4quant", path = "_ModelResults/1_Entry/_ResultsList/") %>%
+                  dplyr::transmute(FACTSET_FUND_ID = gsub(x = FileName, pattern = "_Entry.rds", replacement = "",fixed = TRUE))
+
+funds_ids <- dplyr::anti_join(funds_ids, processedFunds, by = "FACTSET_FUND_ID")
 
 # Setting up parallel processing ------
 library(parallel)
 library(foreach)
 library(doParallel)
 # decide on the number of cores to use
-no_cores <- detectCores() - 1
+no_cores <- min(detectCores() - 1, 30)
 
 # Setting up workers and creating a MySQL connection
 cl <- makeCluster(no_cores)
@@ -160,7 +181,7 @@ library(ROCR)
 library(conformal)
 library(aws.s3)
 # Verbose - to be tested
-verbose <-FALSE
+verbose <- TRUE
 # Debug funds
 debug_flag <- FALSE
 debug_funds <- c("04B8CT-E", "04BK4J-E")
@@ -185,7 +206,7 @@ Save2S3 <- TRUE
 # TO DO: Normalize and scale the features before fitting
 t_start <- Sys.time()
 Results_finals <- vector(mode = "list", length = 5)
-for (i in 1:3) {
+for (i in 1:1) {
   ##  Looping through different dataset:
   # i = 1: Entry
   # i = 2: Change in Position
@@ -211,16 +232,16 @@ for (i in 1:3) {
   }
  # browser()
   
-   Results_finals[[i]] <- foreach(k = 1:length(debug_seq), #dim(funds_ids)[1],
-                                    .combine = list, .multicombine = TRUE,
-                                    .maxcombine = dim(funds_ids)[1] + 1, .export = NULL, .noexport= c('con_lcl','con_RDS'), 
-                                    .packages = c("caret","glmnet", "ROCR", "randomForest", "conformal", "aws.s3")) %dopar%  {
+  Results_finals[[i]] <- foreach(k = 1:dim(funds_ids)[1], #length(debug_seq), #
+                                  .combine = list, .multicombine = TRUE,
+                                  .maxcombine = dim(funds_ids)[1] + 1, .export = NULL, .noexport= c('con_lcl','con_RDS'), 
+                                  .packages = c("caret","glmnet", "ROCR", "randomForest", "conformal", "aws.s3")) %dopar%  {
 
                                    #results_debug <- list()
-                                   #for(k in 1:4){ # length(debug_seq)) { # browser()
-                                        # browser()
-                                    j = debug_seq[k]
-                                   # j = k
+                                   #for(k in 1:dim(funds_ids)[1]) { # browser()
+                                   #browser()
+                                   #j = debug_seq[k]
+                                   j = k
                                    # Setting the seed for reproducability 
                                    set.seed(j)
                                     #Creating a list to save results
@@ -232,14 +253,14 @@ for (i in 1:3) {
                                    # Processing i_th fund
                                    res2ret$Fund_ID <- f <- funds_ids$FACTSET_FUND_ID[j]
                                    # res2ret$Fund_ID <- f <- fund2debug$FACTSET_FUND_ID[j]
-                                   
+                                   #browser()
                                    if(verbose == TRUE) {
                                      # Creating a node specific files to write debug info to
                                      fname <- paste(Sys.info()[['nodename']], Sys.getpid(), sep='-')
                                      # Creating a single (local) file to write diagnostic to:
                                      fname <- paste("Verbose_Log", Sys.Date(), ClassificationModel, samplingMethod4EntryExit, sep='-')
                                      # message(paste0("Processing fund:", f ,". Memory used: ", pryr::mem_used()))
-                                     verbose_msg <- paste0(fitting_data, ", Worker: ", paste(Sys.info()[['nodename']], Sys.getpid(), sep='-'),
+                                     verbose_msg <- paste0(fitting_data, ", Worker: ", paste(Sys.time(), Sys.info()[['nodename']], Sys.getpid(), sep='-'),
                                                            ", j = ", j,", Processing fund:", f ,", Memory used: ", pryr::mem_used())
                                      cat(verbose_msg, file = paste0(fname, ".txt"), sep = "\n", append = TRUE)
                                      # print(verbose_msg)
@@ -339,7 +360,11 @@ for (i in 1:3) {
                                    if(NROW(data.set_2process) == 0){
                                      res2ret$Insufficient_data <- TRUE
                                      res2ret$Info.Msg <- paste("This fund has no data to model for the case of", fitting_data)
-                                     ifelse(debug_flag, next, return(res2ret))
+                                     ifelse(debug_flag, next, {
+                                       if(Save2S3 == TRUE)
+                                         s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       return(res2ret)
+                                       })
                                    }
                                    
                                    while(is.null(num_var2consider) || (num_var2consider < min_num_var2consider) & retentionRatio > 0.5) {
@@ -391,7 +416,11 @@ for (i in 1:3) {
                                    # Skip fund if there is less than
                                    if(NROW(data.set) < min_num_samples) {
                                      res2ret$Insufficient_data <- TRUE
-                                     ifelse(debug_flag, next, return(res2ret))
+                                     ifelse(debug_flag, next, {
+                                       if(Save2S3 == TRUE)
+                                         s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       return(res2ret)
+                                      })
                                    } else res2ret$Insufficient_data <- FALSE
                                    
                                    
@@ -438,7 +467,6 @@ for (i in 1:3) {
                                    # Upsampling the entry/exit obserrvation when trainning the classification model
                                    # http://dpmartin42.github.io/blogposts/r/imbalanced-classes-part-1
                                    if(i %in% c(1,3)) objControl$sampling <- samplingMethod4EntryExit
-                                   # browser()
                                    
                                    glmnet_lasso <- tryCatch(
                                      # http://stackoverflow.com/questions/12193779/how-to-write-trycatch-in-r
@@ -450,7 +478,7 @@ for (i in 1:3) {
                                                                                               .lambda = c(exp(seq(log(1e-5), log(1e0), length.out = 20)), 10^(1:5)))),
                                                      
                                                      # Random Forest Modeling
-                                                     "RANDOMFOREST" =  train(X_caret, Y_caret, method='rf', metric = "Kappa", trControl=objControl, ntree = 101,
+                                                     "RANDOMFOREST" =  train(X_caret, Y_caret, method='rf', metric = "Accuracy", trControl=objControl, ntree = 501,
                                                                              ## Tell randomForest to sample by strata.. That means within each class
                                                                              strata = Y_caret, sampsize = rep(min(table(Y_caret)), 2),
                                                                              tuneGrid = expand.grid(.mtry = c(1, 3, 5, 7, 10)),
@@ -474,7 +502,10 @@ for (i in 1:3) {
                                    # browser()
                                    if(any(class(glmnet_lasso) %in% c("warning", "error"))) {
                                      #Results_final[[counter]] <- res2ret
-                                     ifelse(debug_flag, next, return(res2ret))
+                                     ifelse(debug_flag, next, {
+                                       if(Save2S3 == TRUE) s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       return(res2ret)
+                                       })
                                    } else {
                                      res2ret$RegFit_warning <- res2ret$RegFit_error <- FALSE
                                      
@@ -619,6 +650,18 @@ for (i in 1:3) {
                                    # removing clutter ----
                                    rm(glmnet_lasso)
                                    if(!debug_flag) {
+                                     if(Save2S3 == TRUE) {
+                                       s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       if(verbose == TRUE) {
+                                         # Creating a single (local) file to write diagnostic to:
+                                         fname <- paste("ModelResults_Log", Sys.Date(), ClassificationModel, samplingMethod4EntryExit, sep='-')
+                                         # message(paste0("Processing fund:", f ,". Memory used: ", pryr::mem_used()))
+                                         verbose_msg <- paste0(fitting_data, ", Worker: ", paste(Sys.time(), Sys.info()[['nodename']], Sys.getpid(), sep='-'),
+                                                               ", j = ", j,", wrote results list of fund:", f ,", to S3")
+                                         cat(verbose_msg, file = paste0(fname, ".txt"), sep = "\n", append = TRUE)
+                                         # print(verbose_msg)
+                                       }
+                                     }
                                      return(res2ret)
                                    } else {results_debug[[k]] <- res2ret}
                                  }

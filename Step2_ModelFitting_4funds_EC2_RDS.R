@@ -95,10 +95,9 @@ conformal_prediction_score <- function(model, new_data, details = FALSE) {
 
 
 ls.S3 <- function(bkt = "q4quant", path = "_ModelResults/1_Entry/_ResultsList/"){
-  
   res_tmp <- get_bucket(bucket = bkt, prefix = path)
   res <- data.frame(FileName = sapply(res_tmp, FUN = function(x){x$Key}), stringsAsFactors = FALSE)
-  while(NROW(res) %% 1000 == 0) {
+  while(NROW(res) %% 1000 == 0 && NROW(res) > 0) {
     res_tmp <- get_bucket(bucket = bkt, prefix = path, marker = res$FileName[NROW(res)])
     res_tmp2 <- data.frame(FileName = sapply(res_tmp, FUN = function(x){x$Key}), stringsAsFactors = FALSE)
     res <- rbind(res, res_tmp2)
@@ -140,12 +139,12 @@ save.model.path <- "C:/Users/Administrator/Documents/R_workspaces/AI_Targetting/
 #### Funds_Ids for small samples
 # funds_ids <- dbGetQuery(con, "SELECT DISTINCT FACTSET_FUND_ID FROM fund_us_holdings_hist_w_symbols_and_sic_SAMPLE")
 #### Funds_Ids for medium samples (size = 1000)
-funds_ids <- dbGetQuery(conn = con_lcl_master, "SELECT FACTSET_FUND_ID FROM fund_ids_us")
+funds_ids <- dbGetQuery(conn = con_lcl_master, "SELECT FACTSET_FUND_ID FROM fund_ids_us") %>% tibble::rownames_to_column(var = "SeedID")
 
 # Skipping Processed funds stored in S3.
 library(aws.s3)
-processedFunds <- ls.S3(bkt = "q4quant", path = "_ModelResults/1_Entry/_ResultsList/") %>%
-                  dplyr::transmute(FACTSET_FUND_ID = gsub(x = FileName, pattern = "_Entry.rds", replacement = "",fixed = TRUE))
+processedFunds <- ls.S3(bkt = "q4quant", path = "_ModelResults/2_Change/_ResultsList/") %>%
+                  dplyr::transmute(FACTSET_FUND_ID = gsub(x = FileName, pattern = "_Change.rds", replacement = "",fixed = TRUE))
 
 funds_ids <- dplyr::anti_join(funds_ids, processedFunds, by = "FACTSET_FUND_ID")
 
@@ -206,7 +205,7 @@ Save2S3 <- TRUE
 # TO DO: Normalize and scale the features before fitting
 t_start <- Sys.time()
 Results_finals <- vector(mode = "list", length = 5)
-for (i in 1:1) {
+for (i in 2:2) {
   ##  Looping through different dataset:
   # i = 1: Entry
   # i = 2: Change in Position
@@ -243,7 +242,8 @@ for (i in 1:1) {
                                    #j = debug_seq[k]
                                    j = k
                                    # Setting the seed for reproducability 
-                                   set.seed(j)
+                                   seed <- funds_ids$SeedID[j]
+                                   set.seed(seed)
                                     #Creating a list to save results
                                    res2ret <- list(Fund_ID = NULL, RegFit_warning = NULL, RegFit_error = NULL, Prob_Threshold = NULL, Results_coeff = NULL, Results_stat = NULL,
                                                    Insufficient_data = NULL, Training_N = NULL, Testing_N = NULL, fitting_data = fitting_data, Info.Msg = NULL,
@@ -361,8 +361,11 @@ for (i in 1:1) {
                                      res2ret$Insufficient_data <- TRUE
                                      res2ret$Info.Msg <- paste("This fund has no data to model for the case of", fitting_data)
                                      ifelse(debug_flag, next, {
-                                       if(Save2S3 == TRUE)
+                                       if(Save2S3 == TRUE) {
                                          s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       } else {
+                                          saveRDS(object = res2ret, file = paste0("Results_List/", f, "_", fitting_data, ".rds")) 
+                                       }
                                        return(res2ret)
                                        })
                                    }
@@ -417,8 +420,11 @@ for (i in 1:1) {
                                    if(NROW(data.set) < min_num_samples) {
                                      res2ret$Insufficient_data <- TRUE
                                      ifelse(debug_flag, next, {
-                                       if(Save2S3 == TRUE)
+                                       if(Save2S3 == TRUE) {
                                          s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       } else {
+                                         saveRDS(object = res2ret, file = paste0("Results_List/", f, "_", fitting_data, ".rds")) 
+                                       }
                                        return(res2ret)
                                       })
                                    } else res2ret$Insufficient_data <- FALSE
@@ -503,7 +509,11 @@ for (i in 1:1) {
                                    if(any(class(glmnet_lasso) %in% c("warning", "error"))) {
                                      #Results_final[[counter]] <- res2ret
                                      ifelse(debug_flag, next, {
-                                       if(Save2S3 == TRUE) s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       if(Save2S3 == TRUE) {
+                                         s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                       } else {
+                                         saveRDS(object = res2ret, file = paste0("Results_List/", f, "_", fitting_data, ".rds")) 
+                                       }
                                        return(res2ret)
                                        })
                                    } else {
@@ -645,13 +655,16 @@ for (i in 1:1) {
                                        names(res2ret$Results_coeff)[2] <- paste(f, "importance", sep = "_")
                                      }
                                      
-                                     
+                                    
                                    }
                                    # removing clutter ----
                                    rm(glmnet_lasso)
                                    if(!debug_flag) {
                                      if(Save2S3 == TRUE) {
                                        s3saveRDS(x = res2ret, bucket = "q4quant", object = paste0(S3_path, "_ResultsList/",f, "_", fitting_data, ".rds"))
+                                     } else {
+                                       saveRDS(object = res2ret, file = paste0("Results_List/", f, "_", fitting_data, ".rds")) 
+                                     }
                                        if(verbose == TRUE) {
                                          # Creating a single (local) file to write diagnostic to:
                                          fname <- paste("ModelResults_Log", Sys.Date(), ClassificationModel, samplingMethod4EntryExit, sep='-')

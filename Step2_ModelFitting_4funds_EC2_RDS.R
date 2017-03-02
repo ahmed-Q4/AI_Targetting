@@ -143,10 +143,10 @@ funds_ids <- dbGetQuery(conn = con_lcl_master, "SELECT FACTSET_FUND_ID FROM fund
 
 # Skipping Processed funds stored in S3.
 library(aws.s3)
-processedFunds <- ls.S3(bkt = "q4quant", path = "_ModelResults/2_Change/_ResultsList/") %>%
-                  dplyr::transmute(FACTSET_FUND_ID = gsub(x = FileName, pattern = "_Change.rds", replacement = "",fixed = TRUE))
+#processedFunds <- ls.S3(bkt = "q4quant", path = "_ModelResults/2_Change/_ResultsList/") %>%
+#                  dplyr::transmute(FACTSET_FUND_ID = gsub(x = FileName, pattern = "_Change.rds", replacement = "",fixed = TRUE))
 
-funds_ids <- dplyr::anti_join(funds_ids, processedFunds, by = "FACTSET_FUND_ID")
+# funds_ids <- dplyr::anti_join(funds_ids, processedFunds, by = "FACTSET_FUND_ID")
 
 # Setting up parallel processing ------
 library(parallel)
@@ -199,7 +199,7 @@ ClassificationModel <- "RandomForest"
 # Sampling method to correct of class imbalance in the case of Entry/Exit. Possible Value: up, down
 samplingMethod4EntryExit <- "down"
 writeModelResults2Disk <- TRUE # FALSE
-Save2S3 <- TRUE
+Save2S3 <- FALSE # TRUE
 
 
 # TO DO: Normalize and scale the features before fitting
@@ -665,7 +665,7 @@ for (i in 2:2) {
                                      } else {
                                        saveRDS(object = res2ret, file = paste0("Results_List/", f, "_", fitting_data, ".rds")) 
                                      }
-                                       if(verbose == TRUE) {
+                                     if(verbose == TRUE) {
                                          # Creating a single (local) file to write diagnostic to:
                                          fname <- paste("ModelResults_Log", Sys.Date(), ClassificationModel, samplingMethod4EntryExit, sep='-')
                                          # message(paste0("Processing fund:", f ,". Memory used: ", pryr::mem_used()))
@@ -674,7 +674,6 @@ for (i in 2:2) {
                                          cat(verbose_msg, file = paste0(fname, ".txt"), sep = "\n", append = TRUE)
                                          # print(verbose_msg)
                                        }
-                                     }
                                      return(res2ret)
                                    } else {results_debug[[k]] <- res2ret}
                                  }
